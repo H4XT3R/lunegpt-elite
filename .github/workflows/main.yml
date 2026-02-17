@@ -27,13 +27,20 @@ jobs:
           cp base_code/main.dart factory/lib/main.dart
           cp base_code/pubspec.yaml factory/pubspec.yaml
           
-          # 3. Apply High-Performance AI Fixes
+          # 3. Enter factory to apply the "Elite" fixes
           cd factory
           
-          # Force the Android SDK to version 26 (Required for AI)
-          sed -i 's/minSdk = .*/minSdk = 26/' android/app/build.gradle.kts
+          # --- 🛡️ THE INTERNET FIX (DO NOT REMOVE) ---
+          # This inserts internet permissions so the AI brain can download
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>' android/app/src/main/AndroidManifest.xml
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' android/app/src/main/AndroidManifest.xml
           
-          # Link the newest Android NDK for the AI engine
+          # This allows the app to talk to download servers without being blocked
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+          # ------------------------------------------
+
+          # 4. Apply High-Performance AI Fixes
+          sed -i 's/minSdk = .*/minSdk = 26/' android/app/build.gradle.kts
           echo "flutter.ndkVersion=27.0.12077973" >> android/local.properties
 
       - name: Build Elite APK
