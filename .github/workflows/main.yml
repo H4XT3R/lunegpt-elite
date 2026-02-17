@@ -1,0 +1,49 @@
+name: LuneGPT Elite Engine
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Fresh Project Injection
+        run: |
+          # 1. Create a clean factory project
+          flutter create --platforms android --project-name lunegpt factory
+          
+          # 2. Inject your logic and dependencies
+          cp base_code/main.dart factory/lib/main.dart
+          cp base_code/pubspec.yaml factory/pubspec.yaml
+          
+          # 3. Apply High-Performance AI Fixes
+          cd factory
+          
+          # Force the Android SDK to version 26 (Required for AI)
+          sed -i 's/minSdk = .*/minSdk = 26/' android/app/build.gradle.kts
+          
+          # Link the newest Android NDK for the AI engine
+          echo "flutter.ndkVersion=27.0.12077973" >> android/local.properties
+
+      - name: Build Elite APK
+        run: |
+          cd factory
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LuneGPT-Elite-Release
+          path: factory/build/app/outputs/flutter-apk/app-release.apk
