@@ -15,8 +15,8 @@ class LuneGPTEngine extends StatefulWidget {
 }
 
 class _LuneGPTEngineState extends State<LuneGPTEngine> {
-  String status = "🌙 LuneGPT Awakening...";
-  String debugLog = "System: Initializing Neural Links...";
+  String status = "🌙 Moon Base Connecting...";
+  String debugLog = "System: Initializing...";
   double progress = 0.0;
   bool isReady = false;
 
@@ -26,7 +26,7 @@ class _LuneGPTEngineState extends State<LuneGPTEngine> {
     _startIntelligenceFetch();
   }
 
-  void log(String msg) => setState(() => debugLog = "${msg}\n$debugLog");
+  void log(String msg) => setState(() => debugLog = "$msg\n$debugLog");
 
   Future<void> _startIntelligenceFetch() async {
     try {
@@ -38,102 +38,110 @@ class _LuneGPTEngineState extends State<LuneGPTEngine> {
         return;
       }
 
-      // ✅ FIXED: New Verified Hugging Face Direct Download Link
-      const url = "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q2_K.gguf?download=true";
+      const url = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q2_K.gguf";
+      log("📡 Pinging HuggingFace...");
       
-      log("Connecting to Moon Base...");
-      await Dio().download(url, file.path, onReceiveProgress: (count, total) {
+      final dio = Dio(BaseOptions(
+        followRedirects: true,
+        maxRedirects: 5,
+        connectTimeout: Duration(seconds: 30),
+      ));
+
+      await dio.download(url, file.path, onReceiveProgress: (count, total) {
         if (total != -1) {
           setState(() {
             progress = count / total;
-            status = "Fetching Intelligence: ${(progress * 100).toStringAsFixed(1)}%";
+            status = "Syncing Neural Data: ${(progress * 100).toStringAsFixed(1)}%";
           });
         }
       });
 
       setState(() { isReady = true; status = "LuneGPT Online"; });
     } catch (e) {
-      log("❌ ERROR: $e");
-      setState(() => status = "Link Broken. Check Logs.");
+      log("❌ CRITICAL: $e");
+      setState(() => status = "Connection Failed. Try again.");
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF0D1117), // Deep Space Blue
+      backgroundColor: Color(0xFF0A0C10),
       body: Container(
         decoration: BoxDecoration(
           gradient: RadialGradient(
-            center: Alignment(0, -0.5),
-            radius: 1.2,
-            colors: [Color(0xFF161B22), Color(0xFF0D1117)],
+            center: Alignment(0, -0.4),
+            radius: 1.0,
+            colors: [Color(0xFF1B2735), Color(0xFF090A0F)],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              // --- DEBUG CONSOLE ---
+              // System Console for Logs
               Container(
-                height: 70,
+                height: 80,
                 width: double.infinity,
-                margin: EdgeInsets.all(12),
-                padding: EdgeInsets.all(8),
+                margin: EdgeInsets.all(15),
                 decoration: BoxDecoration(
-                  color: Colors.black45,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.cyanAccent.withOpacity(0.2)),
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.cyanAccent.withOpacity(0.3)),
                 ),
                 child: SingleChildScrollView(
                   reverse: true,
-                  child: Text(debugLog, style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontFamily: 'monospace')),
+                  padding: EdgeInsets.all(10),
+                  child: Text(debugLog, style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontFamily: 'monospace')),
                 ),
               ),
 
+              // This is the part that caused the build error
               Expanded(
                 child: Center(
                   child: !isReady 
                     ? Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // Glowy Moon Icon
-                          Icon(Icons.dark_mode, size: 100, color: Colors.cyanAccent),
-                          SizedBox(height: 30),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 50),
+                          Icon(Icons.nights_stay, size: 100, color: Colors.cyanAccent),
+                          SizedBox(height: 40),
+                          Container(
+                            width: 250,
+                            height: 6,
                             child: LinearProgressIndicator(
                               value: progress, 
                               backgroundColor: Colors.white10,
-                              color: Colors.cyanAccent,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.cyanAccent),
                             ),
                           ),
-                          SizedBox(height: 20),
-                          Text(status, style: TextStyle(color: Colors.white70, fontSize: 16, letterSpacing: 1.5)),
+                          SizedBox(height: 25),
+                          Text(status, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w300)),
                         ],
                       )
-                    : Icon(Icons.auto_awesome, size: 120, color: Colors.cyanAccent),
+                    : Icon(Icons.bolt, size: 120, color: Colors.cyanAccent),
+                ),
               ),
 
-              // --- CHAT BOX (LIFTED HIGHER) ---
+              // Chat Input Box (Lifted 60px to avoid system buttons)
               Padding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, 60), // Extra bottom padding (60) avoids your phone buttons
+                padding: EdgeInsets.fromLTRB(25, 0, 25, 60), 
                 child: Container(
+                  height: 55,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
+                    color: Colors.white.withOpacity(0.07),
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.cyanAccent.withOpacity(0.4)),
+                    border: Border.all(color: Colors.cyanAccent.withOpacity(0.5)),
+                    boxShadow: [
+                      BoxShadow(color: Colors.cyanAccent.withOpacity(0.1), blurRadius: 10)
+                    ],
                   ),
                   child: TextField(
                     style: TextStyle(color: Colors.white),
                     decoration: InputDecoration(
-                      hintText: "Speak to Lune...",
+                      hintText: "Enter command...",
                       hintStyle: TextStyle(color: Colors.white24),
                       contentPadding: EdgeInsets.symmetric(horizontal: 25, vertical: 15),
                       border: InputBorder.none,
-                      suffixIcon: Padding(
-                        padding: EdgeInsets.only(right: 10),
-                        child: Icon(Icons.send_rounded, color: Colors.cyanAccent),
-                      ),
+                      suffixIcon: Icon(Icons.send_rounded, color: Colors.cyanAccent),
                     ),
                   ),
                 ),
