@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
+import 'dart:async';
 
 void main() {
   runApp(const LlamaApp());
@@ -12,11 +13,7 @@ class LlamaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.deepPurple,
-        brightness: Brightness.light,
-      ),
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blueAccent),
       home: const ChatScreen(),
     );
   }
@@ -36,66 +33,67 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final TextEditingController _controller = TextEditingController();
+  // FIX: Version 0.1.1 uses LlamaController
+  final LlamaController _controller = LlamaController();
+  final TextEditingController _inputController = TextEditingController();
   final List<ChatMessage> _messages = [];
   bool _isLoaded = false;
   bool _isTyping = false;
-  LlamaModel? _model;
 
   @override
   void initState() {
     super.initState();
-    _initModel();
+    _initLlama();
   }
 
-  Future<void> _initModel() async {
+  Future<void> _initLlama() async {
     try {
-      // FIX: Changed 'nThreads' to 'threads' as required by v0.1.1
-      final config = ModelConfig(
-        modelPath: '/sdcard/Download/model.gguf', // Change to your actual path
-        threads: 4, 
+      // FIX: Parameters in 0.1.1 are: modelPath, nThreads, contextSize
+      // Note the 'n' in nThreads is back in this specific controller method
+      await _controller.loadModel(
+        modelPath: '/sdcard/Download/model.gguf', // Update to your path
+        nThreads: 4, 
         contextSize: 2048,
       );
-      
-      // Note: If using LlamaController, logic slightly differs, 
-      // but this matches your previous structure.
       setState(() => _isLoaded = true);
     } catch (e) {
-      debugPrint("Load Error: $e");
+      debugPrint("Load error: $e");
     }
   }
 
-  void _handleSend() {
-    if (_controller.text.trim().isEmpty) return;
+  void _sendPrompt() {
+    final text = _inputController.text.trim();
+    if (text.isEmpty || !_isLoaded) return;
 
     setState(() {
-      _messages.add(ChatMessage(_controller.text, true));
+      _messages.add(ChatMessage(text, true));
+      _messages.add(ChatMessage("", false)); // Placeholder for AI response
       _isTyping = true;
     });
+    _inputController.clear();
 
-    String userQuery = _controller.text;
-    _controller.clear();
-
-    // Mocking AI Response logic (Replace with your model.generate call)
-    Future.delayed(const Duration(seconds: 1), () {
-      setState(() {
-        _isTyping = false;
-        _messages.add(ChatMessage("This is a response from Llama.", false));
-      });
-    });
+    String fullResponse = "";
+    _controller.generate(prompt: text, maxTokens: 512).listen(
+      (token) {
+        fullResponse += token;
+        setState(() {
+          _messages[_messages.length - 1] = ChatMessage(fullResponse, false);
+        });
+      },
+      onDone: () => setState(() => _isTyping = false),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Llama Local AI"),
-        centerTitle: true,
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: const Text("Llama AI Assistant"),
         actions: [
-          Icon(_isLoaded ? Icons.circle : Icons.error, 
-               color: _isLoaded ? Colors.green : Colors.red, size: 12),
-          const SizedBox(width: 16),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Icon(Icons.circle, color: _isLoaded ? Colors.green : Colors.grey, size: 12),
+          )
         ],
       ),
       body: Column(
@@ -104,77 +102,47 @@ class _ChatScreenState extends State<ChatScreen> {
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: _messages.length,
-              itemBuilder: (context, index) => _buildBubble(_messages[index]),
+              itemBuilder: (context, i) => _buildChatBubble(_messages[i]),
             ),
           ),
-          if (_isTyping)
-            const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: LinearProgressIndicator(minHeight: 2),
-            ),
-          _buildInput(),
+          if (_isTyping) const LinearProgressIndicator(),
+          _buildInputArea(),
         ],
       ),
     );
   }
 
-  Widget _buildBubble(ChatMessage msg) {
-    final isUser = msg.isUser;
+  Widget _buildChatBubble(ChatMessage msg) {
     return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: msg.isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isUser 
-              ? Theme.of(context).colorScheme.primary 
-              : Theme.of(context).colorScheme.surfaceVariant,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isUser ? 16 : 0),
-            bottomRight: Radius.circular(isUser ? 0 : 16),
-          ),
+          color: msg.isUser ? Colors.blueAccent : Colors.grey[200],
+          borderRadius: BorderRadius.circular(15),
         ),
         child: Text(
           msg.text,
-          style: TextStyle(color: isUser ? Colors.white : Colors.black87),
+          style: TextStyle(color: msg.isUser ? Colors.white : Colors.black),
         ),
       ),
     );
   }
 
-  Widget _buildInput() {
+  Widget _buildInputArea() {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
-      ),
-      child: SafeArea(
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                decoration: InputDecoration(
-                  hintText: "Ask Llama...",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  filled: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                ),
-              ),
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _inputController,
+              decoration: const InputDecoration(hintText: "Type your message..."),
             ),
-            const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: _isLoaded ? _handleSend : null,
-              icon: const Icon(Icons.send),
-            ),
-          ],
-        ),
+          ),
+          IconButton(onPressed: _sendPrompt, icon: const Icon(Icons.send)),
+        ],
       ),
     );
   }
