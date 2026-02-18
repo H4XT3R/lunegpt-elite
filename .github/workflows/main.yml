@@ -27,12 +27,14 @@ jobs:
           cd factory
           
           # 🛡️ PERMISSIONS & RAM UNLOCK
+          # Adding permissions before the <application> tag
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>' android/app/src/main/AndroidManifest.xml
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' android/app/src/main/AndroidManifest.xml
-          sed -i 's/<application/<application android:largeHeap="true" android:usesClaretextTraffic="true"/' android/app/src/main/AndroidManifest.xml
           
-          # 🧠 AI SAFE-GUARD (Keep R8 from breaking the Llama engine)
-          # Instead of disabling R8, we tell it to NOT shrink or optimize the AI native code
+          # Injecting largeHeap and usesCleartextTraffic (FIXED TYPO HERE)
+          sed -i 's/<application/<application android:largeHeap="true" android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+          
+          # 🧠 AI SAFE-GUARD (Proguard Rules)
           echo "-keep class com.github.anuscorne.llama_flutter_android.** { *; }" >> android/app/proguard-rules.pro
           echo "-keep class com.sun.jna.** { *; }" >> android/app/proguard-rules.pro
           
