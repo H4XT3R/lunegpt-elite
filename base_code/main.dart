@@ -52,7 +52,6 @@ class _MainChatState extends State<MainChat> {
     await Permission.storage.request();
     await Permission.manageExternalStorage.request();
 
-    // The path where your model should be on your phone
     const String path = '/sdcard/Download/model.gguf';
 
     if (!File(path).existsSync()) {
@@ -66,7 +65,7 @@ class _MainChatState extends State<MainChat> {
     try {
       setState(() => _status = "Initializing 16GB RAM Bridge...");
       
-      // Corrected parameter: nThreads (Specific to v0.1.1)
+      // Fixed: nThreads is the correct parameter for v0.1.1
       await _llama.loadModel(
         modelPath: path,
         nThreads: 4, 
@@ -91,9 +90,9 @@ class _MainChatState extends State<MainChat> {
     if (text.isEmpty || !_ready) return;
 
     setState(() {
-      _msgs.add({"r": "user", "t": text});
-      _msgs.add({"r": "llama", "t": "..."});
-      _ready = false; // Disable button while generating
+      _msgs.add({"role": "user", "text": text});
+      _msgs.add({"role": "llama", "text": "..."});
+      _ready = false; 
     });
     _input.clear();
 
@@ -102,16 +101,19 @@ class _MainChatState extends State<MainChat> {
       (token) {
         buffer += token;
         setState(() {
-          _msgs.last["t"] = buffer;
+          _msgs.last["text"] = buffer;
         });
-        // Auto-scroll as text appears
         if (_scroll.hasClients) {
-          _scroll.jumpTo(_scroll.position.maxScrollExtent);
+          _scroll.animateTo(
+            _scroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
         }
       },
       onDone: () => setState(() => _ready = true),
       onError: (e) => setState(() {
-        _msgs.last["t"] = "Error: $e";
+        _msgs.last["text"] = "Error: $e";
         _ready = true;
       }),
     );
@@ -123,11 +125,9 @@ class _MainChatState extends State<MainChat> {
       appBar: AppBar(
         title: const Text("Llama Factory AI", style: TextStyle(fontSize: 18)),
         centerTitle: true,
-        backgroundColor: Colors.black26,
       ),
       body: Column(
         children: [
-          // Dynamic Status Bar
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(8),
@@ -135,15 +135,9 @@ class _MainChatState extends State<MainChat> {
             child: Text(
               _status,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _ready ? Colors.greenAccent : Colors.orangeAccent,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: _ready ? Colors.greenAccent : Colors.orangeAccent, fontSize: 12),
             ),
           ),
-          
-          // Chat Window
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -154,8 +148,6 @@ class _MainChatState extends State<MainChat> {
                     itemBuilder: (context, i) => _chatBubble(_msgs[i]),
                   ),
           ),
-
-          // Input Panel
           _inputPanel(),
         ],
       ),
@@ -163,7 +155,7 @@ class _MainChatState extends State<MainChat> {
   }
 
   Widget _chatBubble(Map<String, String> m) {
-    bool isUser = m["r"] == "user";
+    bool isUser = m["role"] == "user";
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -172,17 +164,9 @@ class _MainChatState extends State<MainChat> {
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
         decoration: BoxDecoration(
           color: isUser ? Colors.cyan[800] : Colors.grey[850],
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: isUser ? const Radius.circular(16) : const Radius.circular(0),
-            bottomRight: isUser ? const Radius.circular(0) : const Radius.circular(16),
-          ),
+          borderRadius: BorderRadius.circular(16),
         ),
-        child: Text(
-          m["t"]!,
-          style: const TextStyle(color: Colors.white, fontSize: 15),
-        ),
+        child: Text(m["text"]!, style: const TextStyle(color: Colors.white, fontSize: 15)),
       ),
     );
   }
@@ -190,7 +174,6 @@ class _MainChatState extends State<MainChat> {
   Widget _inputPanel() {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: const BoxDecoration(color: Colors.black26),
       child: SafeArea(
         child: Row(
           children: [
@@ -198,25 +181,17 @@ class _MainChatState extends State<MainChat> {
               child: TextField(
                 controller: _input,
                 decoration: InputDecoration(
-                  hintText: _ready ? "Ask your AI..." : "Thinking...",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                    borderSide: BorderSide.none,
-                  ),
+                  hintText: "Type a prompt...",
                   filled: true,
                   fillColor: Colors.grey[900],
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
                 ),
-                onSubmitted: (_) => _send(),
               ),
             ),
             const SizedBox(width: 8),
-            CircleAvatar(
-              backgroundColor: _ready ? Colors.cyan : Colors.grey,
-              child: IconButton(
-                onPressed: _ready ? _send : null,
-                icon: const Icon(Icons.send_rounded, color: Colors.white),
-              ),
+            IconButton.filled(
+              onPressed: _ready ? _send : null,
+              icon: const Icon(Icons.send),
             ),
           ],
         ),
