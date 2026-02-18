@@ -6,37 +6,48 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      - uses: subosito/flutter-action@v2
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
       - name: Fresh Project Injection
         run: |
+          # 1. Clean the factory
+          rm -rf factory
           flutter create --platforms android --project-name lunegpt factory
+          
+          # 2. Inject your code
           cp base_code/main.dart factory/lib/main.dart
           cp base_code/pubspec.yaml factory/pubspec.yaml
           cd factory
           
-          # 🛡️ PERMISSION INJECTION
-          find android/app/src -name "AndroidManifest.xml" -exec sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>' {} +
-          find android/app/src -name "AndroidManifest.xml" -exec sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' {} +
-          find android/app/src -name "AndroidManifest.xml" -exec sed -i 's/<application/<application android:largeHeap="true" android:usesCleartextTraffic="true"/' {} +
+          # 3. 🛡️ FORCE PERMISSIONS (Triple-Check)
+          # We add permissions to the Main Manifest
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>' android/app/src/main/AndroidManifest.xml
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' android/app/src/main/AndroidManifest.xml
           
-          # 🧠 AI STABILITY (KEEPING THE ENGINE ALIVE)
-          echo "-keep class com.github.anuscorne.llama_flutter_android.** { *; }" >> android/app/proguard-rules.pro
+          # 4. 🚀 UNLOCK HTTP & LARGE RAM (Fixed Spelling)
+          # Cleartext traffic is needed to download the model from some mirrors
+          sed -i 's/<application/<application android:largeHeap="true" android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
           
-          # 🔧 NDK FIX
+          # 5. 🔧 NDK & AI CONFIG
           sed -i 's/minSdk = .*/minSdk = 26/' android/app/build.gradle.kts
           echo "flutter.ndkVersion=27.0.12077973" >> android/local.properties
+          echo "-keep class com.github.anuscorne.llama_flutter_android.** { *; }" >> android/app/proguard-rules.pro
 
       - name: Build Elite APK
         run: |
           cd factory
           flutter pub get
+          flutter clean
           flutter build apk --release
 
       - name: Upload Artifact
