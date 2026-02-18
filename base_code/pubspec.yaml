@@ -1,7 +1,6 @@
-name: lunegpt
-description: Elite Intelligence by Adam Aghnia.
+name: factory
+description: Llama AI Factory for Android
 version: 1.0.0+1
-publish_to: 'none'
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -9,10 +8,17 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # The AI Engine
   llama_flutter_android: ^0.1.1
-  path_provider: ^2.1.2
-  dio: ^5.4.1
-  cupertino_icons: ^1.0.6
+
+  # Permission manager to stop the "Instant Close" crash
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
