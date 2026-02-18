@@ -1,152 +1,181 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
+import 'package:permission_handler/permission_handler.dart';
 
-void main() {
-  runApp(const LlamaApp());
-}
+void main() => runApp(const LlamaFactoryApp());
 
-class LlamaApp extends StatelessWidget {
-  const LlamaApp({super.key});
-
+class LlamaFactoryApp extends StatelessWidget {
+  const LlamaFactoryApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.indigo,
-        brightness: Brightness.light,
-      ),
-      home: const ChatScreen(),
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.cyan, brightness: Brightness.dark),
+      home: const MainChat(),
     );
   }
 }
 
-class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
-
+class MainChat extends StatefulWidget {
+  const MainChat({super.key});
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  State<MainChat> createState() => _MainChatState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _MainChatState extends State<MainChat> {
   final LlamaController _llama = LlamaController();
-  final TextEditingController _textController = TextEditingController();
-  final List<Map<String, String>> _messages = [];
-  bool _isLoaded = false;
-  bool _isTyping = false;
+  final TextEditingController _input = TextEditingController();
+  final ScrollController _scroll = ScrollController();
+  final List<Map<String, String>> _msgs = [];
+  
+  bool _ready = false;
+  bool _loading = true;
+  String _status = "Starting Engine...";
 
   @override
   void initState() {
     super.initState();
-    _setup();
+    _startUp();
   }
 
-  Future<void> _setup() async {
+  // ALL-IN-ONE SETUP LOGIC
+  Future<void> _startUp() async {
+    // 1. Request Permissions (Crucial for physical phones)
+    setState(() => _status = "Requesting Storage Access...");
+    await [Permission.storage, Permission.manageExternalStorage].request();
+
+    // 2. Locate the Model
+    const String path = '/sdcard/Download/model.gguf';
+    if (!File(path).existsSync()) {
+      setState(() {
+        _loading = false;
+        _status = "CRITICAL ERROR: model.gguf not found in Downloads folder.";
+      });
+      return;
+    }
+
+    // 3. Load Model with v0.1.1 parameters
     try {
-      // FIX: Parameters in 0.1.1 use 'threads' NOT 'nThreads'
+      setState(() => _status = "Initializing 16GB RAM Bridge...");
       await _llama.loadModel(
-        modelPath: '/sdcard/Download/model.gguf', // Adjust to your model path
-        threads: 4, 
+        modelPath: path, 
+        nThreads: 6, // Optimized for 8GB+ phones
         contextSize: 2048,
       );
-      setState(() => _isLoaded = true);
+      setState(() { _ready = true; _loading = false; _status = "System Online"; });
     } catch (e) {
-      debugPrint("Init Error: $e");
+      setState(() {
+        _loading = false;
+        _status = "LOAD FAILED: $e\n\nTip: Ensure 'largeHeap' is true in Manifest.";
+      });
     }
   }
 
   void _send() {
-    final prompt = _textController.text.trim();
-    if (prompt.isEmpty || !_isLoaded) return;
+    final text = _input.text.trim();
+    if (text.isEmpty || !_ready) return;
 
     setState(() {
-      _messages.add({"role": "user", "text": prompt});
-      _messages.add({"role": "llama", "text": ""});
-      _isTyping = true;
+      _msgs.add({"r": "user", "t": text});
+      _msgs.add({"r": "llama", "t": "..."});
     });
-    _textController.clear();
+    _input.clear();
 
-    String response = "";
-    _llama.generate(prompt: prompt, maxTokens: 512).listen((token) {
-      response += token;
-      setState(() {
-        _messages.last["text"] = response;
-      });
-    }, onDone: () => setState(() => _isTyping = false));
+    String buffer = "";
+    _llama.generate(prompt: text).listen((token) {
+      buffer += token;
+      setState(() => _msgs.last["t"] = buffer);
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    }, onDone: () => setState(() => _ready = true));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Llama Assistant"),
+        title: Text("Llama Factory v0.1.1", style: TextStyle(fontSize: 16)),
         centerTitle: true,
-        actions: [
-          Icon(Icons.circle, size: 12, color: _isLoaded ? Colors.green : Colors.red),
-          const SizedBox(width: 16),
-        ],
+        backgroundColor: Colors.black12,
       ),
       body: Column(
         children: [
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
-              itemBuilder: (context, i) => _buildBubble(_messages[i]),
-            ),
+          // Status Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            color: _ready ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+            child: Text(_status, textAlign: TextAlign.center, style: TextStyle(color: _ready ? Colors.green : Colors.orange, fontSize: 12)),
           ),
-          if (_isTyping) const LinearProgressIndicator(minHeight: 2),
-          _buildInput(),
+          
+          // Chat Area
+          Expanded(
+            child: _loading 
+              ? Center(child: CircularProgressIndicator()) 
+              : ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _msgs.length,
+                  itemBuilder: (context, i) => _chatBubble(_msgs[i]),
+                ),
+          ),
+
+          // Input Area
+          _inputPanel(),
         ],
       ),
     );
   }
 
-  Widget _buildBubble(Map<String, String> msg) {
-    bool isUser = msg["role"] == "user";
+  Widget _chatBubble(Map<String, String> m) {
+    bool isUser = m["r"] == "user";
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        padding: const EdgeInsets.all(12),
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.all(14),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
         decoration: BoxDecoration(
-          color: isUser ? Colors.indigo : Colors.grey[200],
-          borderRadius: BorderRadius.circular(12),
+          color: isUser ? Colors.cyan[700] : Colors.grey[850],
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(16),
+            bottomLeft: isUser ? Radius.circular(16) : Radius.circular(0),
+            bottomRight: isUser ? Radius.circular(0) : Radius.circular(16),
+          ),
         ),
-        child: Text(
-          msg["text"]!,
-          style: TextStyle(color: isUser ? Colors.white : Colors.black87),
-        ),
+        child: Text(m["t"]!, style: TextStyle(color: Colors.white, fontSize: 15)),
       ),
     );
   }
 
-  Widget _buildInput() {
-    return Padding(
+  Widget _inputPanel() {
+    return Container(
       padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _textController,
-              decoration: InputDecoration(
-                hintText: "Type a prompt...",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(color: Colors.black26),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _input,
+                decoration: InputDecoration(
+                  hintText: _ready ? "Type a prompt..." : "Waiting for model...",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                  filled: true,
+                  fillColor: Colors.grey[900],
+                  contentPadding: EdgeInsets.symmetric(horizontal: 20),
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          CircleAvatar(
-            backgroundColor: Colors.indigo,
-            child: IconButton(
-              icon: const Icon(Icons.send, color: Colors.white),
-              onPressed: _isLoaded ? _send : null,
+            const SizedBox(width: 8),
+            FloatingActionButton.small(
+              onPressed: _ready ? _send : null,
+              child: Icon(Icons.send_rounded),
+              backgroundColor: _ready ? Colors.cyan : Colors.grey,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
