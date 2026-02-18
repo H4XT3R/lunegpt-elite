@@ -6,7 +6,7 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 void main() => runApp(MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0A0A0B),
+        scaffoldBackgroundColor: const Color(0xFF080809),
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.cyanAccent, brightness: Brightness.dark),
       ),
       home: const LuneGPTElite(),
@@ -26,22 +26,21 @@ class _LuneGPTEliteState extends State<LuneGPTElite> {
   bool _isLoading = false;
   String _status = "SYSTEM OFFLINE";
 
-  // 1. IMPROVED PICKER: Bypasses the "BIN" error by allowing any extension
   Future<void> _pickAndLoad() async {
     try {
       setState(() => _isLoading = true);
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.any, // Tells Android to ignore its "BIN" label
-      );
+      FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
 
       if (result != null && result.files.single.path != null) {
-        String path = result.files.single.path!;
         setState(() => _status = "🧠 SYNCING NEURO-CORE...");
+        
+        // CRITICAL: Give the UI 1 second to settle so the phone doesn't panic
+        await Future.delayed(const Duration(seconds: 1));
 
         await _llama.loadModel(
-          modelPath: path,
-          threads: 2,         // Safe for Redmi 14C
-          contextSize: 256,    // Tiny for maximum stability
+          modelPath: result.files.single.path!,
+          threads: 1,        // Use 1 thread for maximum stability on Redmi
+          contextSize: 256,   // Absolute minimum RAM usage
         );
 
         setState(() {
@@ -55,22 +54,19 @@ class _LuneGPTEliteState extends State<LuneGPTElite> {
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _status = "SYNC ERROR: $e";
+        _status = "SYNC FAILED: PHONE RAM FULL";
       });
     }
   }
 
-  // 2. NEURO-SYNC PROMPT: Matches Adam Aghnia's exact template
   void _send() {
     final text = _input.text.trim();
     if (text.isEmpty || !_isReady) return;
 
-    // Use the exact Llama-3 formatting from the Colab script
-    final neuroPrompt = 
-      "<|start_header_id|>system<|end_header_id|>\n\n"
-      "You are LuneGPT, an Elite Intelligence and logical peer optimized by Adam Aghnia.<|eot_id|>"
-      "<|start_header_id|>user<|end_header_id|>\n\n$text<|eot_id|>"
-      "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    final prompt = "<|start_header_id|>system<|end_header_id|>\n\n"
+        "You are LuneGPT, an Elite Intelligence optimized by Adam Aghnia.<|eot_id|>"
+        "<|start_header_id|>user<|end_header_id|>\n\n$text<|eot_id|>"
+        "<|start_header_id|>assistant<|end_header_id|>\n\n";
 
     _input.clear();
     setState(() {
@@ -78,102 +74,75 @@ class _LuneGPTEliteState extends State<LuneGPTElite> {
       _messages.add({"r": "l", "t": ""});
     });
 
-    String buffer = "";
-    _llama.generate(prompt: neuroPrompt).listen((token) {
-      buffer += token;
-      setState(() => _messages.last["t"] = buffer);
+    _llama.generate(prompt: prompt).listen((token) {
+      setState(() => _messages.last["t"] = _messages.last["t"]! + token);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // This prevents the keyboard from squishing your UI
+      resizeToAvoidBottomInset: true, 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        title: Text(_status, style: const TextStyle(letterSpacing: 1.5, fontSize: 10, color: Colors.cyanAccent)),
+        title: Text(_status, style: const TextStyle(fontSize: 10, color: Colors.cyanAccent)),
       ),
       body: Column(
         children: [
-          if (!_isReady) _buildSetup() else _buildChat(),
-          _buildInput(),
+          Expanded(child: _isReady ? _buildChat() : _buildSetup()),
+          _buildInputArea(),
         ],
       ),
     );
   }
 
   Widget _buildSetup() {
-    return Expanded(
-      child: Center(
-        child: _isLoading 
-          ? const CircularProgressIndicator(color: Colors.cyanAccent)
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.psychology, size: 80, color: Colors.cyanAccent),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                    side: const BorderSide(color: Colors.cyanAccent),
-                  ),
-                  onPressed: _pickAndLoad,
-                  child: const Text("INITIALIZE GGUF ENGINE"),
-                ),
-              ],
-            ),
-      ),
+    return Center(
+      child: _isLoading 
+        ? const CircularProgressIndicator(color: Colors.cyanAccent)
+        : ElevatedButton(onPressed: _pickAndLoad, child: const Text("INITIALIZE ENGINE")),
     );
   }
 
   Widget _buildChat() {
-    return Expanded(
-      child: ListView.builder(
-        padding: const EdgeInsets.all(15),
-        itemCount: _messages.length,
-        itemBuilder: (ctx, i) {
-          bool isU = _messages[i]["r"] == "u";
-          return Align(
-            alignment: isU ? Alignment.centerRight : Alignment.centerLeft,
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: isU ? Colors.cyanAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: isU ? Colors.cyanAccent : Colors.white10),
-              ),
-              child: Text(_messages[i]["t"]!, style: const TextStyle(fontSize: 15)),
-            ),
-          );
-        },
+    return ListView.builder(
+      padding: const EdgeInsets.all(15),
+      itemCount: _messages.length,
+      itemBuilder: (ctx, i) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _messages[i]["r"] == "u" ? Colors.cyan.withOpacity(0.1) : Colors.white10,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(_messages[i]["t"]!),
       ),
     );
   }
 
-  Widget _buildInput() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      color: Colors.black,
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _input,
-              decoration: InputDecoration(
-                hintText: "Message LuneGPT...",
-                filled: true,
-                fillColor: Colors.white10,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+  Widget _buildInputArea() {
+    // SafeArea prevents collision with bottom navigation buttons
+    return SafeArea(
+      bottom: true,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _input,
+                decoration: InputDecoration(
+                  hintText: "Enter prompt...",
+                  fillColor: Colors.white10,
+                  filled: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                ),
               ),
             ),
-          ),
-          IconButton(
-            onPressed: _send,
-            icon: const Icon(Icons.bolt, color: Colors.cyanAccent),
-          )
-        ],
+            IconButton(onPressed: _send, icon: const Icon(Icons.bolt, color: Colors.cyanAccent)),
+          ],
+        ),
       ),
     );
   }
