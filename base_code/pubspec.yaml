@@ -12,6 +12,7 @@ dependencies:
   llama_flutter_android: ^0.1.1
   path_provider: ^2.1.5
   permission_handler: ^11.3.0
+  file_picker: ^8.0.0
 
 dev_dependencies:
   flutter_test:
