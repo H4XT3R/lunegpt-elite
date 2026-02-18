@@ -55,8 +55,8 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _isDownloading = true);
 
     try {
-      // Direct high-speed download for Llama 3.2 1B (~800MB)
-      const url = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf";
+      // Change the URL line to this:
+      const url = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q2_K.gguf";
       await Dio().download(url, file.path, onReceiveProgress: (count, total) {
         setState(() => _progress = count / total);
       });
