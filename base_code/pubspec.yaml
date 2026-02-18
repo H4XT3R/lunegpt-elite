@@ -1,7 +1,7 @@
-name: lunegpt
-description: A new Flutter project.
-publish_to: 'none'
+name: factory
+description: Llama AI Factory
 version: 1.0.0+1
+publish_to: 'none'
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -9,11 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # The AI Engine - v0.1.1 uses nThreads
   llama_flutter_android: 0.1.1
-
-  # Handles storage access so the app doesn't crash on start
   permission_handler: ^11.3.1
 
 dev_dependencies:
