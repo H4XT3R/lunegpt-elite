@@ -21,17 +21,17 @@ jobs:
           cp base_code/pubspec.yaml factory/pubspec.yaml
           cd factory
           
-          # 🛡️ PERMISSIONS INJECTOR
+          # 🛡️ PERMISSION INJECTION
           find android/app/src -name "AndroidManifest.xml" -exec sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>' {} +
           find android/app/src -name "AndroidManifest.xml" -exec sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' {} +
           find android/app/src -name "AndroidManifest.xml" -exec sed -i 's/<application/<application android:largeHeap="true" android:usesCleartextTraffic="true"/' {} +
           
-          # 🔧 NDK & SDK FIX
+          # 🧠 AI STABILITY (KEEPING THE ENGINE ALIVE)
+          echo "-keep class com.github.anuscorne.llama_flutter_android.** { *; }" >> android/app/proguard-rules.pro
+          
+          # 🔧 NDK FIX
           sed -i 's/minSdk = .*/minSdk = 26/' android/app/build.gradle.kts
           echo "flutter.ndkVersion=27.0.12077973" >> android/local.properties
-          
-          # 🧠 AI SAFE-GUARD
-          echo "-keep class com.github.anuscorne.llama_flutter_android.** { *; }" >> android/app/proguard-rules.pro
 
       - name: Build Elite APK
         run: |
