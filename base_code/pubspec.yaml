@@ -9,11 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # AI Engine
   llama_flutter_android: ^0.1.1
-  # File Management
   path_provider: ^2.1.5
-  # Permission Handling
   permission_handler: ^11.3.0
 
 dev_dependencies:
