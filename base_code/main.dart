@@ -15,11 +15,7 @@ class LuneGPTApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorSchemeSeed: Colors.cyanAccent,
-      ),
+      theme: ThemeData(useMaterial3: true, brightness: Brightness.dark, colorSchemeSeed: Colors.cyan),
       home: const LuneChatScreen(),
     );
   }
@@ -39,12 +35,11 @@ class _LuneChatScreenState extends State<LuneChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isReady = false;
   bool _isGenerating = false;
-  String _status = "INITIALIZING ARCHITECTURE...";
-
-  final String systemPrompt = 
-      "You are LuneGPT, an Elite Intelligence and logical peer optimized by Adam Aghnia. "
-      "1. [PATTERN RECOGNITION] 2. [LOGICAL VALIDATION] 3. [CLARITY REFINEMENT]. "
-      "Professionalism: No slang. Calm, brilliant tone.";
+  
+  // Progress tracking variables
+  String _status = "STARTING UP...";
+  double _migrationProgress = 0.0;
+  bool _showProgressBar = false;
 
   @override
   void initState() {
@@ -54,60 +49,82 @@ class _LuneChatScreenState extends State<LuneChatScreen> {
 
   Future<void> _bootLune() async {
     try {
-      // 1. Request special "All Files" access for Android 11+ to read from Downloads
-      var status = await Permission.manageExternalStorage.request();
-      
-      if (status.isGranted) {
-        // 2. Direct path to your phone's main Downloads folder
-        const String downloadPath = "/storage/emulated/0/Download/LuneGPT_Universal.gguf";
-        final File modelFile = File(downloadPath);
+      // 1. Permissions check
+      if (await Permission.manageExternalStorage.request().isDenied) {
+        setState(() => _status = "ERROR: PERMISSION DENIED");
+        return;
+      }
 
-        if (!modelFile.existsSync()) {
-          setState(() => _status = "FILE NOT FOUND IN DOWNLOADS");
-          _showPathDialog(downloadPath);
-          return;
-        }
+      final Directory? appDir = await getExternalStorageDirectory();
+      final String privatePath = "${appDir!.path}/LuneGPT_Universal.gguf";
+      const String downloadPath = "/storage/emulated/0/Download/LuneGPT_Universal.gguf";
 
-        setState(() => _status = "LOADING FROM DOWNLOADS...");
-        
-        // FIXED PARAMETER: threads instead of nThreads
-        await _llama.loadModel(
-          modelPath: downloadPath, 
-          threads: 8,       
-          contextSize: 4096,
-        );
+      // 2. Check if already migrated
+      if (File(privatePath).existsSync()) {
+        setState(() => _status = "🧠 LOADING ENGINE...");
+        await _loadLlama(privatePath);
+        return;
+      }
 
-        setState(() { 
-          _isReady = true; 
-          _status = "🌙 LUNEGPT ACTIVE"; 
-        });
+      // 3. Start Migration if found in Downloads
+      final File downloadFile = File(downloadPath);
+      if (downloadFile.existsSync()) {
+        await _migrateWithProgress(downloadFile, privatePath);
       } else {
-        setState(() => _status = "PERMISSION DENIED");
-        // Open settings if permission is permanently denied
-        if (status.isPermanentlyDenied) {
-          openAppSettings();
-        }
+        setState(() => _status = "📂 MISSING: PLACE GGUF IN DOWNLOADS");
       }
     } catch (e) {
       setState(() => _status = "BOOT ERROR: $e");
     }
   }
 
-  void _showPathDialog(String path) {
-    showDialog(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text("Action Required"),
-        content: SelectableText("Ensure the model is named correctly and located at:\n\n$path"),
-        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text("OK"))],
-      ),
+  // --- THE PROGRESS BAR LOGIC ---
+  Future<void> _migrateWithProgress(File source, String targetPath) async {
+    setState(() {
+      _status = "🚚 MIGRATING NEURAL CORE...";
+      _showProgressBar = true;
+    });
+
+    final int totalBytes = await source.length();
+    int bytesCopied = 0;
+
+    final File targetFile = File(targetPath);
+    final IOSink sink = targetFile.openWrite();
+
+    // Read the file in chunks and update UI progress
+    await source.openRead().forEach((chunk) {
+      sink.add(chunk);
+      bytesCopied += chunk.length;
+      setState(() {
+        _migrationProgress = bytesCopied / totalBytes;
+      });
+    });
+
+    await sink.close();
+    
+    setState(() {
+      _showProgressBar = false;
+      _status = "✅ MIGRATION COMPLETE";
+    });
+    
+    await _loadLlama(targetPath);
+  }
+
+  Future<void> _loadLlama(String path) async {
+    await _llama.loadModel(
+      modelPath: path,
+      threads: 6, // Best for Redmi 14C
+      contextSize: 4096,
     );
+    setState(() {
+      _isReady = true;
+      _status = "🌙 LUNEGPT ACTIVE";
+    });
   }
 
   void _sendMessage() {
     final userText = _input.text.trim();
     if (userText.isEmpty || !_isReady || _isGenerating) return;
-
     _input.clear();
     setState(() {
       _isGenerating = true;
@@ -115,19 +132,12 @@ class _LuneChatScreenState extends State<LuneChatScreen> {
       _messages.add({"r": "l", "t": ""});
     });
 
-    final prompt = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n$systemPrompt<|eot_id|>"
-                   "<|start_header_id|>user<|end_header_id|>\n\n$userText<|eot_id|>"
-                   "<|start_header_id|>assistant<|end_header_id|>\n\n";
-
     String buffer = "";
-    _llama.generate(prompt: prompt).listen(
+    _llama.generate(prompt: userText).listen(
       (token) {
         buffer += token;
         setState(() => _messages.last["t"] = buffer);
-        if (_scroll.hasClients) {
-          _scroll.animateTo(_scroll.position.maxScrollExtent, 
-              duration: const Duration(milliseconds: 50), curve: Curves.easeOut);
-        }
+        if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
       },
       onDone: () => setState(() => _isGenerating = false),
     );
@@ -140,7 +150,17 @@ class _LuneChatScreenState extends State<LuneChatScreen> {
         title: Column(
           children: [
             const Text("LUNEGPT", style: TextStyle(letterSpacing: 2, fontSize: 16)),
-            Text(_status, style: TextStyle(fontSize: 8, color: _isReady ? Colors.cyanAccent : Colors.red)),
+            Text(_status, style: TextStyle(fontSize: 10, color: _isReady ? Colors.cyan : Colors.orange)),
+            if (_showProgressBar) 
+              Padding(
+                padding: const EdgeInsets.only(top: 8, left: 40, right: 40),
+                child: LinearProgressIndicator(
+                  value: _migrationProgress,
+                  backgroundColor: Colors.white10,
+                  color: Colors.cyan,
+                  minHeight: 2,
+                ),
+              ),
           ],
         ),
         centerTitle: true,
@@ -161,7 +181,7 @@ class _LuneChatScreenState extends State<LuneChatScreen> {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: isU ? Colors.cyan[900] : Colors.white10,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(15),
                     ),
                     child: Text(_messages[i]["t"]!),
                   ),
@@ -176,15 +196,9 @@ class _LuneChatScreenState extends State<LuneChatScreen> {
   }
 
   Widget _inputBar() {
-    // SafeArea prevents collision with the phone's built-in navigation bar/buttons
     return SafeArea(
       child: Container(
-        padding: EdgeInsets.only(
-          bottom: 10, // Base padding
-          left: 15, 
-          right: 15, 
-          top: 10
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
         child: Row(
           children: [
             Expanded(
@@ -192,16 +206,12 @@ class _LuneChatScreenState extends State<LuneChatScreen> {
                 controller: _input,
                 decoration: InputDecoration(
                   hintText: "Enter Query...",
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
                 ),
               ),
             ),
             const SizedBox(width: 10),
-            IconButton.filled(
-              onPressed: _isReady ? _sendMessage : null, 
-              icon: const Icon(Icons.bolt)
-            ),
+            IconButton.filled(onPressed: _isReady ? _sendMessage : null, icon: const Icon(Icons.bolt)),
           ],
         ),
       ),
