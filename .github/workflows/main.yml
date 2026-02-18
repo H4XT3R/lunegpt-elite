@@ -20,25 +20,23 @@ jobs:
 
       - name: Fresh Project Injection
         run: |
-          # 1. Create a clean factory project
           flutter create --platforms android --project-name lunegpt factory
-          
-          # 2. Inject your logic and dependencies
           cp base_code/main.dart factory/lib/main.dart
           cp base_code/pubspec.yaml factory/pubspec.yaml
-          
-          # 3. Apply the "Elite Stability" Fixes
           cd factory
           
-          # 🛡️ FIX 1: Add Internet Permissions
+          # 🛡️ SYSTEM PERMISSIONS & RAM UNLOCK
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>' android/app/src/main/AndroidManifest.xml
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' android/app/src/main/AndroidManifest.xml
-          
-          # 🚀 FIX 2: Unlock Extra RAM (Prevents Crashing/Closing)
-          # This tells Android to give the app more memory to load the AI brain
           sed -i 's/<application/<application android:largeHeap="true" android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
           
-          # ⚙️ FIX 3: Android System Settings
+          # ⚙️ CRASH PREVENTION (Disable Minification)
+          # This ensures the AI code isn't "shrunk" or broken during the build
+          echo "android.enableR8=false" >> android/gradle.properties
+          sed -i 's/minifyEnabled true/minifyEnabled false/' android/app/build.gradle.kts || true
+          sed -i 's/shrinkResources true/shrinkResources false/' android/app/build.gradle.kts || true
+
+          # 🔧 NDK & SDK CONFIG
           sed -i 's/minSdk = .*/minSdk = 26/' android/app/build.gradle.kts
           echo "flutter.ndkVersion=27.0.12077973" >> android/local.properties
 
