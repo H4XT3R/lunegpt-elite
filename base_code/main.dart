@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
-void main() => runApp(const MaterialApp(home: EasyLune()));
+void main() => runApp(const MaterialApp(
+  debugShowCheckedModeBanner: false,
+  home: EasyLune(),
+));
 
 class EasyLune extends StatefulWidget {
   const EasyLune({super.key});
@@ -20,7 +23,7 @@ class _EasyLuneState extends State<EasyLune> {
   bool _isGenerating = false;
   String _status = "STEP 1: TAP BUTTON BELOW";
 
-  // The Magic Button: No Manifest needed!
+  // The Magic Button: No Manifest changes needed!
   Future<void> _pickAndLoad() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles();
@@ -30,7 +33,7 @@ class _EasyLuneState extends State<EasyLune> {
         
         await _llama.loadModel(
           modelPath: result.files.single.path!,
-          threads: 6, // Best for Redmi 14C
+          threads: 6, // Smooth for Redmi 14C
           contextSize: 2048,
         );
 
@@ -64,7 +67,7 @@ class _EasyLuneState extends State<EasyLune> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: const Color(0xFF0F0F0F),
       appBar: AppBar(
         title: Text(_status, style: const TextStyle(fontSize: 14, color: Colors.cyanAccent)),
         backgroundColor: Colors.black,
@@ -74,11 +77,22 @@ class _EasyLuneState extends State<EasyLune> {
         children: [
           if (!_isReady) 
             Expanded(child: Center(
-              child: ElevatedButton.icon(
-                onPressed: _pickAndLoad,
-                icon: const Icon(Icons.folder),
-                label: const Text("SELECT GGUF FROM DOWNLOADS"),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.cyan[800], foregroundColor: Colors.white),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.psychology, size: 80, color: Colors.white12),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: _pickAndLoad,
+                    icon: const Icon(Icons.folder),
+                    label: const Text("SELECT GGUF FROM DOWNLOADS"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.cyan[800], 
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15)
+                    ),
+                  ),
+                ],
               ),
             ))
           else
@@ -110,9 +124,10 @@ class _EasyLuneState extends State<EasyLune> {
   }
 
   Widget _inputArea() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      color: Colors.black,
+      child: SafeArea(
         child: Row(
           children: [
             Expanded(
@@ -121,17 +136,21 @@ class _EasyLuneState extends State<EasyLune> {
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: "Ask LuneGPT...",
+                  hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
-                  fillColor: Colors.white10,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
+                  fillColor: Colors.white.withOpacity(0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: _isReady ? _send : null,
-              icon: const Icon(Icons.bolt),
-              backgroundColor: Colors.cyanAccent,
+            // FIXED BUTTON: No more "backgroundColor" error
+            CircleAvatar(
+              backgroundColor: _isReady ? Colors.cyanAccent : Colors.grey,
+              child: IconButton(
+                onPressed: _isReady ? _send : null,
+                icon: const Icon(Icons.bolt, color: Colors.black),
+              ),
             ),
           ],
         ),
