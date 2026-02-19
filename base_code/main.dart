@@ -4,17 +4,17 @@ import 'package:file_picker/file_picker.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 void main() => runApp(const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: LuneGPTElite(),
-    ));
+  debugShowCheckedModeBanner: false,
+  home: LuneGPTSlowLoad(),
+));
 
-class LuneGPTElite extends StatefulWidget {
-  const LuneGPTElite({super.key});
+class LuneGPTSlowLoad extends StatefulWidget {
+  const LuneGPTSlowLoad({super.key});
   @override
-  State<LuneGPTElite> createState() => _LuneGPTEliteState();
+  State<LuneGPTSlowLoad> createState() => _LuneGPTSlowLoadState();
 }
 
-class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver {
+class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingObserver {
   final LlamaController _llama = LlamaController();
   final TextEditingController _input = TextEditingController();
   final List<Map<String, String>> _chat = [];
@@ -22,49 +22,46 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
   
   bool _isReady = false;
   bool _isThinking = false;
-  String _status = "OFFLINE";
+  String _status = "READY";
 
   @override
   void initState() {
     super.initState();
-    // This part tells the app to watch if you close it
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _streamSub?.cancel();
     _llama.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // AUTO-KILL: If you swipe the app away, it kills the model to save your RAM
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      _llama.dispose();
-      setState(() {
-        _isReady = false;
-        _status = "ENGINE SLEEPING (RAM SAVED)";
-      });
+    if (state == AppLifecycleState.paused) {
+      _llama.dispose(); // Instantly drop the model to keep Android happy
+      setState(() => _isReady = false);
     }
   }
 
-  Future<void> _initializeEngine() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
+  Future<void> _loadModel() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null && result.files.single.path != null) {
       setState(() {
         _isThinking = true;
-        _status = "🧠 LOADING NEURAL NET...";
+        _status = "MAPPING NEURAL CORE...";
       });
+
       try {
+        // THE SECRET: We use very low threads and small context to stay 'slow'
         await _llama.loadModel(
           modelPath: result.files.single.path!,
-          // 'threads' is the correct name in the new version
-          threads: 4, 
-          contextSize: 1024,
+          threads: 2,        // Lower threads = less "aggression" on the CPU/RAM
+          contextSize: 256,   // Very small context is much safer for the Redmi 14C
+          // The plugin uses 'useMmap: true' by default, which is what we want!
         );
+
         setState(() {
           _isReady = true;
           _isThinking = false;
@@ -73,20 +70,10 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
       } catch (e) {
         setState(() {
           _isThinking = false;
-          _status = "CRITICAL SYNC ERROR";
+          _status = "SYSTEM FAILED";
         });
       }
     }
-  }
-
-  // STOP GENERATION FUNCTION
-  void _stopGeneration() async {
-    await _llama.stop(); 
-    await _streamSub?.cancel(); 
-    setState(() {
-      _isThinking = false;
-      _status = "GENERATION HALTED";
-    });
   }
 
   void _send() {
@@ -95,126 +82,91 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
 
     _input.clear();
     setState(() {
-      _chat.add({"role": "user", "text": text});
-      _chat.add({"role": "lune", "text": ""});
+      _chat.add({"r": "u", "t": text});
+      _chat.add({"r": "l", "t": ""});
       _isThinking = true;
     });
 
-    final prompt = "<|start_header_id|>system<|end_header_id|>\n\n"
-        "You are LuneGPT by Adam Aghnia.<|eot_id|>"
-        "<|start_header_id|>user<|end_header_id|>\n\n$text<|eot_id|>"
-        "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    final prompt = "<|start_header_id|>user<|end_header_id|>\n\n$text<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
 
     _streamSub = _llama.generate(prompt: prompt).listen(
-      (token) {
-        setState(() => _chat.last["text"] = _chat.last["text"]! + token);
+      (token) => setState(() => _chat.last["t"] = _chat.last["t"]! + token),
+      onDone: () => setState(() => _isThinking = false),
+      onError: (e) {
+        _llama.stop();
+        setState(() => _isThinking = false);
       },
-      onDone: () => setState(() {
-        _isThinking = false;
-        _status = "🌙 LUNEGPT ACTIVE";
-      }),
-      onError: (e) => setState(() => _isThinking = false),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D0E),
+      backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
-        title: Text(_status, style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, letterSpacing: 2)),
+        title: Text(_status, style: const TextStyle(color: Colors.cyanAccent, fontSize: 10)),
         centerTitle: true,
-        elevation: 0,
       ),
       body: Column(
         children: [
-          Expanded(child: _isReady ? _buildChat() : _buildSetup()),
-          _buildInputArea(),
+          Expanded(child: _isReady ? _buildChat() : _buildInit()),
+          _buildInputBar(),
         ],
       ),
     );
   }
 
-  Widget _buildSetup() {
-    return Center(
-      child: _isThinking 
-          ? const CircularProgressIndicator(color: Colors.cyanAccent)
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.auto_awesome, size: 50, color: Colors.cyanAccent),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent),
-                  onPressed: _initializeEngine, 
-                  child: const Text("INITIALIZE ENGINE", style: TextStyle(color: Colors.black))
-                ),
-              ],
-            ),
-    );
-  }
+  Widget _buildInit() => Center(
+    child: _isThinking 
+      ? const CircularProgressIndicator(color: Colors.cyanAccent)
+      : ElevatedButton(onPressed: _loadModel, child: const Text("LOAD MODEL")),
+  );
 
-  Widget _buildChat() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(20),
-      itemCount: _chat.length,
-      itemBuilder: (ctx, i) {
-        bool isU = _chat[i]["role"] == "user";
-        return Align(
-          alignment: isU ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
-            margin: const EdgeInsets.only(bottom: 15),
-            padding: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-              color: isU ? Colors.cyanAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: isU ? Colors.cyanAccent : Colors.white10),
-            ),
-            child: Text(_chat[i]["text"]!, style: const TextStyle(color: Colors.white, fontSize: 15)),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildInputArea() {
-    // SafeArea prevents collision with phone's navigation bar/buttons
-    return SafeArea(
+  Widget _buildChat() => ListView.builder(
+    padding: const EdgeInsets.all(15),
+    itemCount: _chat.length,
+    itemBuilder: (c, i) => Align(
+      alignment: _chat[i]["r"] == "u" ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(15, 10, 15, 10),
-        decoration: const BoxDecoration(
-          color: Colors.black,
-          border: Border(top: BorderSide(color: Colors.white10)),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _chat[i]["r"] == "u" ? Colors.cyanAccent.withOpacity(0.1) : Colors.white10,
+          borderRadius: BorderRadius.circular(15),
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _input,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: "Enter neural command...",
-                  hintStyle: const TextStyle(color: Colors.white24),
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(0.05),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            // Button toggles between "Send" (Bolt) and "Stop" (Square)
-            GestureDetector(
-              onTap: _isThinking ? _stopGeneration : _send,
-              child: CircleAvatar(
-                backgroundColor: _isThinking ? Colors.redAccent : Colors.cyanAccent,
-                child: Icon(_isThinking ? Icons.stop : Icons.bolt, color: Colors.black),
-              ),
-            ),
-          ],
-        ),
+        child: Text(_chat[i]["t"]!, style: const TextStyle(color: Colors.white)),
       ),
-    );
-  }
+    ),
+  );
+
+  Widget _buildInputBar() => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.all(10),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _input,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: "Neural command...",
+                fillColor: Colors.white10,
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          CircleAvatar(
+            backgroundColor: _isThinking ? Colors.red : Colors.cyanAccent,
+            child: IconButton(
+              icon: Icon(_isThinking ? Icons.stop : Icons.send, color: Colors.black),
+              onPressed: _isThinking ? () => _llama.stop() : _send,
+            ),
+          )
+        ],
+      ),
+    ),
+  );
 }
