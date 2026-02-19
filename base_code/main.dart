@@ -18,7 +18,7 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
   final LlamaController _llama = LlamaController();
   final TextEditingController _input = TextEditingController();
   final List<Map<String, String>> _chat = [];
-  StreamSubscription? _streamSub; // To control the text stream
+  StreamSubscription? _streamSub;
   
   bool _isReady = false;
   bool _isThinking = false;
@@ -27,7 +27,8 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // Watch for App Open/Close
+    // This part tells the app to watch if you close it
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
@@ -40,10 +41,13 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // If you swipe the app away or close it, kill the model to free RAM
+    // AUTO-KILL: If you swipe the app away, it kills the model to save your RAM
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
       _llama.dispose();
-      setState(() => _isReady = false);
+      setState(() {
+        _isReady = false;
+        _status = "ENGINE SLEEPING (RAM SAVED)";
+      });
     }
   }
 
@@ -52,12 +56,13 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
     if (result != null && result.files.single.path != null) {
       setState(() {
         _isThinking = true;
-        _status = "🧠 SYNCING...";
+        _status = "🧠 LOADING NEURAL NET...";
       });
       try {
         await _llama.loadModel(
           modelPath: result.files.single.path!,
-          nThreads: 4,
+          // 'threads' is the correct name in the new version
+          threads: 4, 
           contextSize: 1024,
         );
         setState(() {
@@ -66,16 +71,22 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
           _status = "🌙 LUNEGPT ACTIVE";
         });
       } catch (e) {
-        setState(() => _status = "CRITICAL ERROR");
+        setState(() {
+          _isThinking = false;
+          _status = "CRITICAL SYNC ERROR";
+        });
       }
     }
   }
 
   // STOP GENERATION FUNCTION
   void _stopGeneration() async {
-    await _llama.stop(); // Stops the internal C++ engine
-    await _streamSub?.cancel(); // Stops the Flutter text updates
-    setState(() => _isThinking = false);
+    await _llama.stop(); 
+    await _streamSub?.cancel(); 
+    setState(() {
+      _isThinking = false;
+      _status = "GENERATION HALTED";
+    });
   }
 
   void _send() {
@@ -84,8 +95,8 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
 
     _input.clear();
     setState(() {
-      _chat.add({"r": "u", "t": text});
-      _chat.add({"r": "l", "t": ""});
+      _chat.add({"role": "user", "text": text});
+      _chat.add({"role": "lune", "text": ""});
       _isThinking = true;
     });
 
@@ -96,9 +107,13 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
 
     _streamSub = _llama.generate(prompt: prompt).listen(
       (token) {
-        setState(() => _chat.last["t"] = _chat.last["t"]! + token);
+        setState(() => _chat.last["text"] = _chat.last["text"]! + token);
       },
-      onDone: () => setState(() => _isThinking = false),
+      onDone: () => setState(() {
+        _isThinking = false;
+        _status = "🌙 LUNEGPT ACTIVE";
+      }),
+      onError: (e) => setState(() => _isThinking = false),
     );
   }
 
@@ -108,8 +123,9 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
       backgroundColor: const Color(0xFF0D0D0E),
       appBar: AppBar(
         backgroundColor: Colors.black,
-        title: Text(_status, style: const TextStyle(color: Colors.cyanAccent, fontSize: 10)),
+        title: Text(_status, style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, letterSpacing: 2)),
         centerTitle: true,
+        elevation: 0,
       ),
       body: Column(
         children: [
@@ -124,34 +140,54 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
     return Center(
       child: _isThinking 
           ? const CircularProgressIndicator(color: Colors.cyanAccent)
-          : ElevatedButton(onPressed: _initializeEngine, child: const Text("INIT ENGINE")),
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.auto_awesome, size: 50, color: Colors.cyanAccent),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent),
+                  onPressed: _initializeEngine, 
+                  child: const Text("INITIALIZE ENGINE", style: TextStyle(color: Colors.black))
+                ),
+              ],
+            ),
     );
   }
 
   Widget _buildChat() {
     return ListView.builder(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(20),
       itemCount: _chat.length,
-      itemBuilder: (ctx, i) => Align(
-        alignment: _chat[i]["r"] == "u" ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: _chat[i]["r"] == "u" ? Colors.cyanAccent.withOpacity(0.1) : Colors.white10,
-            borderRadius: BorderRadius.circular(15),
+      itemBuilder: (ctx, i) {
+        bool isU = _chat[i]["role"] == "user";
+        return Align(
+          alignment: isU ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+            margin: const EdgeInsets.only(bottom: 15),
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              color: isU ? Colors.cyanAccent.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: isU ? Colors.cyanAccent : Colors.white10),
+            ),
+            child: Text(_chat[i]["text"]!, style: const TextStyle(color: Colors.white, fontSize: 15)),
           ),
-          child: Text(_chat[i]["t"]!, style: const TextStyle(color: Colors.white)),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _buildInputArea() {
-    return SafeArea( // Pushes the UI above the phone's navigation bar
+    // SafeArea prevents collision with phone's navigation bar/buttons
+    return SafeArea(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: const BoxDecoration(color: Colors.black, border: Border(top: BorderSide(color: Colors.white10))),
+        padding: const EdgeInsets.fromLTRB(15, 10, 15, 10),
+        decoration: const BoxDecoration(
+          color: Colors.black,
+          border: Border(top: BorderSide(color: Colors.white10)),
+        ),
         child: Row(
           children: [
             Expanded(
@@ -159,21 +195,21 @@ class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver
                 controller: _input,
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  hintText: "Neural command...",
+                  hintText: "Enter neural command...",
                   hintStyle: const TextStyle(color: Colors.white24),
-                  fillColor: Colors.white.withOpacity(0.05),
                   filled: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
+                  fillColor: Colors.white.withOpacity(0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            // Dynamic Button: Switch between Send and Stop
-            CircleAvatar(
-              backgroundColor: _isThinking ? Colors.redAccent : Colors.cyanAccent,
-              child: IconButton(
-                icon: Icon(_isThinking ? Icons.stop : Icons.bolt, color: Colors.black),
-                onPressed: _isThinking ? _stopGeneration : _send,
+            const SizedBox(width: 10),
+            // Button toggles between "Send" (Bolt) and "Stop" (Square)
+            GestureDetector(
+              onTap: _isThinking ? _stopGeneration : _send,
+              child: CircleAvatar(
+                backgroundColor: _isThinking ? Colors.redAccent : Colors.cyanAccent,
+                child: Icon(_isThinking ? Icons.stop : Icons.bolt, color: Colors.black),
               ),
             ),
           ],
