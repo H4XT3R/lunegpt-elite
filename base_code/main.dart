@@ -1,15 +1,11 @@
-import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
-void main() => runApp(MaterialApp(
+void main() => runApp(const MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF080809),
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.cyanAccent, brightness: Brightness.dark),
-      ),
-      home: const LuneGPTElite(),
+      home: LuneGPTElite(),
     ));
 
 class LuneGPTElite extends StatefulWidget {
@@ -18,75 +14,102 @@ class LuneGPTElite extends StatefulWidget {
   State<LuneGPTElite> createState() => _LuneGPTEliteState();
 }
 
-class _LuneGPTEliteState extends State<LuneGPTElite> {
+class _LuneGPTEliteState extends State<LuneGPTElite> with WidgetsBindingObserver {
   final LlamaController _llama = LlamaController();
   final TextEditingController _input = TextEditingController();
-  final List<Map<String, String>> _messages = [];
+  final List<Map<String, String>> _chat = [];
+  StreamSubscription? _streamSub; // To control the text stream
+  
   bool _isReady = false;
-  bool _isLoading = false;
-  String _status = "SYSTEM OFFLINE";
+  bool _isThinking = false;
+  String _status = "OFFLINE";
 
-  Future<void> _pickAndLoad() async {
-    try {
-      setState(() => _isLoading = true);
-      FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this); // Watch for App Open/Close
+  }
 
-      if (result != null && result.files.single.path != null) {
-        setState(() => _status = "🧠 SYNCING NEURO-CORE...");
-        
-        // CRITICAL: Give the UI 1 second to settle so the phone doesn't panic
-        await Future.delayed(const Duration(seconds: 1));
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _streamSub?.cancel();
+    _llama.dispose();
+    super.dispose();
+  }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // If you swipe the app away or close it, kill the model to free RAM
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      _llama.dispose();
+      setState(() => _isReady = false);
+    }
+  }
+
+  Future<void> _initializeEngine() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _isThinking = true;
+        _status = "🧠 SYNCING...";
+      });
+      try {
         await _llama.loadModel(
           modelPath: result.files.single.path!,
-          threads: 1,        // Use 1 thread for maximum stability on Redmi
-          contextSize: 256,   // Absolute minimum RAM usage
+          nThreads: 4,
+          contextSize: 1024,
         );
-
         setState(() {
           _isReady = true;
-          _isLoading = false;
-          _status = "🌙 LUNEGPT | NEURO-SYNC ACTIVE";
+          _isThinking = false;
+          _status = "🌙 LUNEGPT ACTIVE";
         });
-      } else {
-        setState(() => _isLoading = false);
+      } catch (e) {
+        setState(() => _status = "CRITICAL ERROR");
       }
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _status = "SYNC FAILED: PHONE RAM FULL";
-      });
     }
+  }
+
+  // STOP GENERATION FUNCTION
+  void _stopGeneration() async {
+    await _llama.stop(); // Stops the internal C++ engine
+    await _streamSub?.cancel(); // Stops the Flutter text updates
+    setState(() => _isThinking = false);
   }
 
   void _send() {
     final text = _input.text.trim();
-    if (text.isEmpty || !_isReady) return;
-
-    final prompt = "<|start_header_id|>system<|end_header_id|>\n\n"
-        "You are LuneGPT, an Elite Intelligence optimized by Adam Aghnia.<|eot_id|>"
-        "<|start_header_id|>user<|end_header_id|>\n\n$text<|eot_id|>"
-        "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    if (text.isEmpty || !_isReady || _isThinking) return;
 
     _input.clear();
     setState(() {
-      _messages.add({"r": "u", "t": text});
-      _messages.add({"r": "l", "t": ""});
+      _chat.add({"r": "u", "t": text});
+      _chat.add({"r": "l", "t": ""});
+      _isThinking = true;
     });
 
-    _llama.generate(prompt: prompt).listen((token) {
-      setState(() => _messages.last["t"] = _messages.last["t"]! + token);
-    });
+    final prompt = "<|start_header_id|>system<|end_header_id|>\n\n"
+        "You are LuneGPT by Adam Aghnia.<|eot_id|>"
+        "<|start_header_id|>user<|end_header_id|>\n\n$text<|eot_id|>"
+        "<|start_header_id|>assistant<|end_header_id|>\n\n";
+
+    _streamSub = _llama.generate(prompt: prompt).listen(
+      (token) {
+        setState(() => _chat.last["t"] = _chat.last["t"]! + token);
+      },
+      onDone: () => setState(() => _isThinking = false),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // This prevents the keyboard from squishing your UI
-      resizeToAvoidBottomInset: true, 
+      backgroundColor: const Color(0xFF0D0D0E),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        title: Text(_status, style: const TextStyle(fontSize: 10, color: Colors.cyanAccent)),
+        backgroundColor: Colors.black,
+        title: Text(_status, style: const TextStyle(color: Colors.cyanAccent, fontSize: 10)),
+        centerTitle: true,
       ),
       body: Column(
         children: [
@@ -99,48 +122,60 @@ class _LuneGPTEliteState extends State<LuneGPTElite> {
 
   Widget _buildSetup() {
     return Center(
-      child: _isLoading 
-        ? const CircularProgressIndicator(color: Colors.cyanAccent)
-        : ElevatedButton(onPressed: _pickAndLoad, child: const Text("INITIALIZE ENGINE")),
+      child: _isThinking 
+          ? const CircularProgressIndicator(color: Colors.cyanAccent)
+          : ElevatedButton(onPressed: _initializeEngine, child: const Text("INIT ENGINE")),
     );
   }
 
   Widget _buildChat() {
     return ListView.builder(
       padding: const EdgeInsets.all(15),
-      itemCount: _messages.length,
-      itemBuilder: (ctx, i) => Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: _messages[i]["r"] == "u" ? Colors.cyan.withOpacity(0.1) : Colors.white10,
-          borderRadius: BorderRadius.circular(10),
+      itemCount: _chat.length,
+      itemBuilder: (ctx, i) => Align(
+        alignment: _chat[i]["r"] == "u" ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _chat[i]["r"] == "u" ? Colors.cyanAccent.withOpacity(0.1) : Colors.white10,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Text(_chat[i]["t"]!, style: const TextStyle(color: Colors.white)),
         ),
-        child: Text(_messages[i]["t"]!),
       ),
     );
   }
 
   Widget _buildInputArea() {
-    // SafeArea prevents collision with bottom navigation buttons
-    return SafeArea(
-      bottom: true,
-      child: Padding(
+    return SafeArea( // Pushes the UI above the phone's navigation bar
+      child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: const BoxDecoration(color: Colors.black, border: Border(top: BorderSide(color: Colors.white10))),
         child: Row(
           children: [
             Expanded(
               child: TextField(
                 controller: _input,
+                style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  hintText: "Enter prompt...",
-                  fillColor: Colors.white10,
+                  hintText: "Neural command...",
+                  hintStyle: const TextStyle(color: Colors.white24),
+                  fillColor: Colors.white.withOpacity(0.05),
                   filled: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
                 ),
               ),
             ),
-            IconButton(onPressed: _send, icon: const Icon(Icons.bolt, color: Colors.cyanAccent)),
+            const SizedBox(width: 8),
+            // Dynamic Button: Switch between Send and Stop
+            CircleAvatar(
+              backgroundColor: _isThinking ? Colors.redAccent : Colors.cyanAccent,
+              child: IconButton(
+                icon: Icon(_isThinking ? Icons.stop : Icons.bolt, color: Colors.black),
+                onPressed: _isThinking ? _stopGeneration : _send,
+              ),
+            ),
           ],
         ),
       ),
