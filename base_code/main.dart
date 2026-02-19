@@ -4,17 +4,18 @@ import 'package:file_picker/file_picker.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 void main() => runApp(const MaterialApp(
-  debugShowCheckedModeBanner: false,
-  home: LuneGPTSlowLoad(),
-));
+      debugShowCheckedModeBanner: false,
+      home: LuneGPTFinal(),
+    ));
 
-class LuneGPTSlowLoad extends StatefulWidget {
-  const LuneGPTSlowLoad({super.key});
+class LuneGPTFinal extends StatefulWidget {
+  const LuneGPTFinal({super.key});
   @override
-  State<LuneGPTSlowLoad> createState() => _LuneGPTSlowLoadState();
+  State<LuneGPTFinal> createState() => _LuneGPTFinalState();
 }
 
-class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingObserver {
+class _LuneGPTFinalState extends State<LuneGPTFinal> with WidgetsBindingObserver {
+  // 1. Initialize Engine
   final LlamaController _llama = LlamaController();
   final TextEditingController _input = TextEditingController();
   final List<Map<String, String>> _chat = [];
@@ -33,44 +34,48 @@ class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingOb
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _llama.dispose();
+    _streamSub?.cancel();
+    _llama.dispose(); 
     super.dispose();
   }
 
+  // 2. The "Redmi Survival" Logic: Release RAM when app is hidden
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      _llama.dispose(); // Instantly drop the model to keep Android happy
-      setState(() => _isReady = false);
+      _llama.unloadModel(); // Frees the 700MB so the OS doesn't kill the app
+      setState(() {
+        _isReady = false;
+        _status = "RAM RELEASED (PAUSED)";
+      });
     }
   }
 
-  Future<void> _loadModel() async {
+  // 3. Inference Engine Workflow
+  Future<void> _load() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null && result.files.single.path != null) {
       setState(() {
         _isThinking = true;
-        _status = "MAPPING NEURAL CORE...";
+        _status = "MAPPING GGUF...";
       });
 
       try {
-        // THE SECRET: We use very low threads and small context to stay 'slow'
         await _llama.loadModel(
           modelPath: result.files.single.path!,
-          threads: 2,        // Lower threads = less "aggression" on the CPU/RAM
-          contextSize: 256,   // Very small context is much safer for the Redmi 14C
-          // The plugin uses 'useMmap: true' by default, which is what we want!
+          nThreads: 4,        // Optimal for Helio G91 (4 Big cores)
+          contextSize: 512,   // Safe zone for 4GB RAM phones
         );
 
         setState(() {
           _isReady = true;
           _isThinking = false;
-          _status = "🌙 LUNEGPT ACTIVE";
+          _status = "🌙 LUNEGPT ONLINE";
         });
       } catch (e) {
         setState(() {
           _isThinking = false;
-          _status = "SYSTEM FAILED";
+          _status = "CRASH: $e";
         });
       }
     }
@@ -82,15 +87,16 @@ class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingOb
 
     _input.clear();
     setState(() {
-      _chat.add({"r": "u", "t": text});
-      _chat.add({"r": "l", "t": ""});
+      _chat.add({"r": "u", "m": text});
+      _chat.add({"r": "l", "m": ""});
       _isThinking = true;
     });
 
+    // Llama-3 / ChatML Format
     final prompt = "<|start_header_id|>user<|end_header_id|>\n\n$text<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
 
     _streamSub = _llama.generate(prompt: prompt).listen(
-      (token) => setState(() => _chat.last["t"] = _chat.last["t"]! + token),
+      (token) => setState(() => _chat.last["m"] = _chat.last["m"]! + token),
       onDone: () => setState(() => _isThinking = false),
       onError: (e) {
         _llama.stop();
@@ -102,7 +108,7 @@ class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingOb
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0D0D0E),
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: Text(_status, style: const TextStyle(color: Colors.cyanAccent, fontSize: 10)),
@@ -111,7 +117,7 @@ class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingOb
       body: Column(
         children: [
           Expanded(child: _isReady ? _buildChat() : _buildInit()),
-          _buildInputBar(),
+          _buildInput(),
         ],
       ),
     );
@@ -120,7 +126,7 @@ class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingOb
   Widget _buildInit() => Center(
     child: _isThinking 
       ? const CircularProgressIndicator(color: Colors.cyanAccent)
-      : ElevatedButton(onPressed: _loadModel, child: const Text("LOAD MODEL")),
+      : ElevatedButton(onPressed: _load, child: const Text("START ENGINE")),
   );
 
   Widget _buildChat() => ListView.builder(
@@ -134,13 +140,14 @@ class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingOb
         decoration: BoxDecoration(
           color: _chat[i]["r"] == "u" ? Colors.cyanAccent.withOpacity(0.1) : Colors.white10,
           borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: _chat[i]["r"] == "u" ? Colors.cyanAccent : Colors.transparent),
         ),
-        child: Text(_chat[i]["t"]!, style: const TextStyle(color: Colors.white)),
+        child: Text(_chat[i]["m"]!, style: const TextStyle(color: Colors.white)),
       ),
     ),
   );
 
-  Widget _buildInputBar() => SafeArea(
+  Widget _buildInput() => SafeArea(
     child: Padding(
       padding: const EdgeInsets.all(10),
       child: Row(
@@ -150,7 +157,7 @@ class _LuneGPTSlowLoadState extends State<LuneGPTSlowLoad> with WidgetsBindingOb
               controller: _input,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: "Neural command...",
+                hintText: "Enter command...",
                 fillColor: Colors.white10,
                 filled: true,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
